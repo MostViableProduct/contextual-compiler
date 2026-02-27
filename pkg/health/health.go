@@ -18,23 +18,23 @@ import (
 // SeverityLevel defines a configurable severity dimension for health tracking.
 type SeverityLevel struct {
 	// Name identifies this severity (e.g., "critical", "regression").
-	Name string
+	Name string `json:"name" yaml:"name"`
 	// Weight is the relative importance in the composite score (should sum to 1.0).
-	Weight float64
+	Weight float64 `json:"weight" yaml:"weight"`
 	// Direction: "negative" means events decrease health, "positive" means they increase it.
-	Direction string
+	Direction string `json:"direction" yaml:"direction"`
 	// DefaultAlpha is the initial Beta alpha parameter.
-	DefaultAlpha float64
+	DefaultAlpha float64 `json:"default_alpha" yaml:"default_alpha"`
 	// DefaultBeta is the initial Beta beta parameter.
-	DefaultBeta float64
+	DefaultBeta float64 `json:"default_beta" yaml:"default_beta"`
 }
 
 // Config holds the health model configuration.
 type Config struct {
 	// Severities defines the severity levels to track.
-	Severities []SeverityLevel
+	Severities []SeverityLevel `json:"severities" yaml:"severities"`
 	// MaxEntries is the maximum entities to keep in memory (default: 10000).
-	MaxEntries int
+	MaxEntries int `json:"max_entries" yaml:"max_entries"`
 }
 
 // DefaultConfig returns a health config matching the original Big Wave model.

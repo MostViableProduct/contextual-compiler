@@ -73,17 +73,17 @@ type GateStore interface {
 // Config holds tunable parameters for the Bayesian gate.
 type Config struct {
 	// AgreementThreshold is the minimum P(agreement) to skip LLM (default: 0.75).
-	AgreementThreshold float64
+	AgreementThreshold float64 `json:"agreement_threshold" yaml:"agreement_threshold"`
 	// UncertaintyMax is the maximum uncertainty to skip LLM (default: 0.10).
-	UncertaintyMax float64
+	UncertaintyMax float64 `json:"uncertainty_max" yaml:"uncertainty_max"`
 	// HeuristicConfidence is the minimum heuristic confidence to consider gating (default: 0.8).
-	HeuristicConfidence float64
+	HeuristicConfidence float64 `json:"heuristic_confidence" yaml:"heuristic_confidence"`
 	// HierarchicalMinObs is the minimum observations before trusting specific prior (default: 20).
-	HierarchicalMinObs int
+	HierarchicalMinObs int `json:"hierarchical_min_obs" yaml:"hierarchical_min_obs"`
 	// MaxEntries is the maximum number of gate entries in memory (default: 10000).
-	MaxEntries int
+	MaxEntries int `json:"max_entries" yaml:"max_entries"`
 	// ShadowMode when true evaluates but never skips (default: false).
-	ShadowMode bool
+	ShadowMode bool `json:"shadow_mode" yaml:"shadow_mode"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

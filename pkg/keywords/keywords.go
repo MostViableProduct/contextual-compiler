@@ -22,13 +22,13 @@ type KeywordStore interface {
 // Config holds keyword learning configuration.
 type Config struct {
 	// MinConfidence is the minimum confidence to promote a keyword (default: 0.7).
-	MinConfidence float64
+	MinConfidence float64 `json:"min_confidence" yaml:"min_confidence"`
 	// MinObservations is the minimum observations to promote (default: 10).
-	MinObservations int
+	MinObservations int `json:"min_observations" yaml:"min_observations"`
 	// MaxPromoted is the maximum promoted keywords to load (default: 200).
-	MaxPromoted int
+	MaxPromoted int `json:"max_promoted" yaml:"max_promoted"`
 	// MaxExtracted is the maximum keywords to extract per classification (default: 5).
-	MaxExtracted int
+	MaxExtracted int `json:"max_extracted" yaml:"max_extracted"`
 }
 
 // DefaultConfig returns default keyword learning configuration.

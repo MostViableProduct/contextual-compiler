@@ -1,9 +1,13 @@
 // Command compiler runs the contextual compiler as a standalone HTTP service.
 //
-// Configuration is loaded from a YAML file specified by the CONFIG_PATH
-// environment variable (default: config.yaml). All adapter dependencies
-// are nil by default — the service runs in pure-heuristic, in-memory mode
-// unless adapters are wired in programmatically.
+// Configuration is loaded from a JSON or YAML file specified by the CONFIG_PATH
+// environment variable (default: config.yaml). The format is auto-detected
+// by file extension (.json, .yaml, .yml).
+//
+// Optional persistence:
+//   - DATABASE_URL: Postgres connection string — enables Postgres storage
+//   - SQLITE_PATH: Path to SQLite database file — enables SQLite storage
+//   - Neither: runs in pure in-memory mode (current default)
 //
 // This binary serves as a reference implementation. Production deployments
 // should import the pkg/ packages directly and wire their own adapters.
@@ -11,7 +15,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
@@ -19,9 +23,17 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
+
+	"github.com/Yes-League/contextual-compiler/adapters/storage/postgres"
+	sqliteadapter "github.com/Yes-League/contextual-compiler/adapters/storage/sqlite"
 	"github.com/Yes-League/contextual-compiler/api"
 	"github.com/Yes-League/contextual-compiler/pkg/classifier"
 	"github.com/Yes-League/contextual-compiler/pkg/compiler"
+	"github.com/Yes-League/contextual-compiler/pkg/gate"
+	"github.com/Yes-League/contextual-compiler/pkg/health"
+	"github.com/Yes-League/contextual-compiler/pkg/keywords"
 )
 
 func main() {
@@ -31,8 +43,10 @@ func main() {
 	}
 
 	cfg := loadConfig()
+	deps, cleanup := buildDeps()
+	defer cleanup()
 
-	c := compiler.New(cfg, compiler.Deps{}, compiler.Callbacks{
+	c := compiler.New(cfg, deps, compiler.Callbacks{
 		OnClassify: func(source, category string) {
 			log.Printf("classify: source=%s category=%s", source, category)
 		},
@@ -94,20 +108,68 @@ func loadConfig() compiler.Config {
 		configPath = "config.yaml"
 	}
 
-	// Try loading config file
-	data, err := os.ReadFile(configPath)
+	cfg, err := compiler.LoadConfigFromFile(configPath)
 	if err != nil {
-		log.Printf("No config file at %s, using defaults with example categories", configPath)
+		log.Printf("No config file at %s (%v), using defaults with example categories", configPath, err)
 		return defaultDemoConfig()
 	}
 
-	var cfg compiler.Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Printf("Warning: failed to parse %s: %v, using defaults", configPath, err)
-		return defaultDemoConfig()
+	if err := compiler.ValidateConfig(cfg); err != nil {
+		log.Printf("Warning: config validation: %v", err)
 	}
 
 	return cfg
+}
+
+// buildDeps creates storage adapters based on environment variables.
+// Returns deps and a cleanup function to close database connections.
+func buildDeps() (compiler.Deps, func()) {
+	var deps compiler.Deps
+	cleanup := func() {}
+
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			log.Fatalf("Failed to open Postgres: %v", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Fatalf("Failed to ping Postgres: %v", err)
+		}
+
+		store := postgres.New(db)
+		if err := store.EnsureSchema(); err != nil {
+			log.Fatalf("Failed to ensure Postgres schema: %v", err)
+		}
+
+		deps.GateStore = store
+		deps.HealthStore = store
+		deps.KeywordStore = store
+		cleanup = func() { db.Close() }
+		log.Println("Storage: Postgres")
+	} else if path := os.Getenv("SQLITE_PATH"); path != "" {
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			log.Fatalf("Failed to open SQLite: %v", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Fatalf("Failed to ping SQLite: %v", err)
+		}
+
+		store := sqliteadapter.New(db)
+		if err := store.EnsureSchema(); err != nil {
+			log.Fatalf("Failed to ensure SQLite schema: %v", err)
+		}
+
+		deps.GateStore = store
+		deps.HealthStore = store
+		deps.KeywordStore = store
+		cleanup = func() { db.Close() }
+		log.Printf("Storage: SQLite (%s)", path)
+	} else {
+		log.Println("Storage: in-memory (no persistence)")
+	}
+
+	return deps, cleanup
 }
 
 func defaultDemoConfig() compiler.Config {
@@ -148,3 +210,14 @@ func defaultDemoConfig() compiler.Config {
 	}
 	return cfg
 }
+
+// Ensure interfaces are satisfied at compile time.
+var (
+	_ gate.GateStore       = (*postgres.Store)(nil)
+	_ health.HealthStore   = (*postgres.Store)(nil)
+	_ keywords.KeywordStore = (*postgres.Store)(nil)
+
+	_ gate.GateStore       = (*sqliteadapter.Store)(nil)
+	_ health.HealthStore   = (*sqliteadapter.Store)(nil)
+	_ keywords.KeywordStore = (*sqliteadapter.Store)(nil)
+)
