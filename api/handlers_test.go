@@ -99,6 +99,20 @@ func TestClassifyEndpoint_MissingType(t *testing.T) {
 	}
 }
 
+func TestClassifyEndpoint_EmptyBody(t *testing.T) {
+	h := NewHandler(testCompiler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("POST", "/v1/classify", bytes.NewReader([]byte("")))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
+	}
+}
+
 func TestClassifyEndpoint_MissingContent(t *testing.T) {
 	h := NewHandler(testCompiler())
 	mux := http.NewServeMux()
@@ -135,6 +149,43 @@ func TestClassifySignalEndpoint(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestClassifySignalEndpoint_MissingType(t *testing.T) {
+	h := NewHandler(testCompiler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	body := ClassifySignalRequest{
+		Source:  "sentry",
+		Payload: json.RawMessage(`{"message": "crash"}`),
+	}
+	b, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("POST", "/v1/classify/signal", bytes.NewReader(b))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
+	}
+}
+
+func TestClassifySignalEndpoint_MissingPayload(t *testing.T) {
+	h := NewHandler(testCompiler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Send JSON without the payload field so it decodes as nil (len 0)
+	b := []byte(`{"source":"sentry","type":"error"}`)
+
+	req := httptest.NewRequest("POST", "/v1/classify/signal", bytes.NewReader(b))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
 	}
 }
 
@@ -179,6 +230,26 @@ func TestRecordHealthEventEndpoint(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRecordHealthEventEndpoint_MissingSeverity(t *testing.T) {
+	h := NewHandler(testCompiler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	body := RecordHealthEventRequest{
+		Category:   "reliability",
+		Confidence: 0.9,
+	}
+	b, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("POST", "/v1/health/tenant-1/entity-1/events", bytes.NewReader(b))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
 	}
 }
 

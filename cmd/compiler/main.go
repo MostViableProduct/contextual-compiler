@@ -26,6 +26,9 @@ import (
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 
+	"github.com/Yes-League/contextual-compiler/adapters/events/logwriter"
+	"github.com/Yes-League/contextual-compiler/adapters/llm/anthropic"
+	"github.com/Yes-League/contextual-compiler/adapters/llm/openai"
 	"github.com/Yes-League/contextual-compiler/adapters/storage/postgres"
 	sqliteadapter "github.com/Yes-League/contextual-compiler/adapters/storage/sqlite"
 	"github.com/Yes-League/contextual-compiler/api"
@@ -169,6 +172,23 @@ func buildDeps() (compiler.Deps, func()) {
 		log.Println("Storage: in-memory (no persistence)")
 	}
 
+	// Wire LLM adapter: prefer Anthropic, fall back to OpenAI
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		deps.LLM = anthropic.New(key)
+		log.Println("LLM: Anthropic")
+	} else if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		deps.LLM = openai.New(key)
+		log.Println("LLM: OpenAI")
+	} else {
+		log.Println("LLM: none (pure heuristic mode)")
+	}
+
+	// Wire event sink
+	if os.Getenv("LOG_EVENTS") == "true" {
+		deps.Events = logwriter.New(os.Stdout)
+		log.Println("Events: log writer (stdout)")
+	}
+
 	return deps, cleanup
 }
 
@@ -220,4 +240,8 @@ var (
 	_ gate.GateStore       = (*sqliteadapter.Store)(nil)
 	_ health.HealthStore   = (*sqliteadapter.Store)(nil)
 	_ keywords.KeywordStore = (*sqliteadapter.Store)(nil)
+
+	_ compiler.LLMClassifier = (*anthropic.Client)(nil)
+	_ compiler.LLMClassifier = (*openai.Client)(nil)
+	_ compiler.EventSink     = (*logwriter.Sink)(nil)
 )
