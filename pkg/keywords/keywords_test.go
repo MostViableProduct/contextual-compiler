@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yes-league/contextual-compiler/pkg/classifier"
+	"github.com/Yes-League/contextual-compiler/pkg/classifier"
 )
 
 func testClassifier() *classifier.Classifier {

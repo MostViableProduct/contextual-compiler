@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/yes-league/contextual-compiler/pkg/compiler"
+	"github.com/Yes-League/contextual-compiler/pkg/compiler"
 )
 
 // Handler wraps a compiler and exposes HTTP endpoints.

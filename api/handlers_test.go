@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yes-league/contextual-compiler/pkg/classifier"
-	"github.com/yes-league/contextual-compiler/pkg/compiler"
+	"github.com/Yes-League/contextual-compiler/pkg/classifier"
+	"github.com/Yes-League/contextual-compiler/pkg/compiler"
 )
 
 func testCompiler() *compiler.Compiler {

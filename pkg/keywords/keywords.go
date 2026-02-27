@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/yes-league/contextual-compiler/pkg/classifier"
+	"github.com/Yes-League/contextual-compiler/pkg/classifier"
 )
 
 // KeywordStore defines the persistence interface for learned keywords.

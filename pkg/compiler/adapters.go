@@ -11,10 +11,10 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/yes-league/contextual-compiler/pkg/classifier"
-	"github.com/yes-league/contextual-compiler/pkg/gate"
-	"github.com/yes-league/contextual-compiler/pkg/health"
-	"github.com/yes-league/contextual-compiler/pkg/keywords"
+	"github.com/Yes-League/contextual-compiler/pkg/classifier"
+	"github.com/Yes-League/contextual-compiler/pkg/gate"
+	"github.com/Yes-League/contextual-compiler/pkg/health"
+	"github.com/Yes-League/contextual-compiler/pkg/keywords"
 )
 
 // LLMClassifier provides deep classification when heuristics are insufficient.

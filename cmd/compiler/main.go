@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yes-league/contextual-compiler/api"
-	"github.com/yes-league/contextual-compiler/pkg/classifier"
-	"github.com/yes-league/contextual-compiler/pkg/compiler"
+	"github.com/Yes-League/contextual-compiler/api"
+	"github.com/Yes-League/contextual-compiler/pkg/classifier"
+	"github.com/Yes-League/contextual-compiler/pkg/compiler"
 )
 
 func main() {
