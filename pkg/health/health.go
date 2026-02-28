@@ -61,7 +61,7 @@ type EntityPriors struct {
 
 // HealthStore defines the persistence interface for health model entries.
 type HealthStore interface {
-	LoadHealthPriors() ([]EntityPriors, error)
+	LoadHealthPriors(maxEntries int) ([]EntityPriors, error)
 	FlushHealthPriors(entries []EntityPriors) error
 }
 
@@ -237,7 +237,7 @@ func (m *Model) Load() error {
 		return nil
 	}
 
-	entries, err := m.store.LoadHealthPriors()
+	entries, err := m.store.LoadHealthPriors(m.config.MaxEntries)
 	if err != nil {
 		return err
 	}
@@ -279,6 +279,21 @@ func (m *Model) EntryCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.entries)
+}
+
+// IsValidSeverity reports whether the given name is a configured severity level.
+func (m *Model) IsValidSeverity(name string) bool {
+	_, ok := m.severities[name]
+	return ok
+}
+
+// ValidSeverities returns the set of configured severity level names.
+func (m *Model) ValidSeverities() map[string]bool {
+	result := make(map[string]bool, len(m.severities))
+	for name := range m.severities {
+		result[name] = true
+	}
+	return result
 }
 
 func betaVariance(alpha, beta float64) float64 {

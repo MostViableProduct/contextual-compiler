@@ -15,7 +15,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,9 +47,16 @@ type Client struct {
 // Option configures a Client.
 type Option func(*Client)
 
+// modelNameRe restricts model names to safe characters.
+var modelNameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
 // WithModel overrides the default model.
 func WithModel(model string) Option {
-	return func(c *Client) { c.model = model }
+	return func(c *Client) {
+		if modelNameRe.MatchString(model) {
+			c.model = model
+		}
+	}
 }
 
 // WithTimeout overrides the default HTTP timeout.
@@ -56,16 +66,28 @@ func WithTimeout(d time.Duration) Option {
 
 // WithBaseURL overrides the API base URL (useful for proxies or testing).
 func WithBaseURL(u string) Option {
-	return func(c *Client) { c.baseURL = strings.TrimRight(u, "/") }
+	return func(c *Client) {
+		u = strings.TrimRight(u, "/")
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+			return // silently ignore invalid URLs
+		}
+		c.baseURL = u
+	}
 }
 
 // New creates an Anthropic classification client.
 func New(apiKey string, opts ...Option) *Client {
 	c := &Client{
-		httpClient: &http.Client{Timeout: defaultTimeout},
-		apiKey:     apiKey,
-		model:      defaultModel,
-		baseURL:    defaultBaseURL,
+		httpClient: &http.Client{
+			Timeout: defaultTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		apiKey:  apiKey,
+		model:   defaultModel,
+		baseURL: defaultBaseURL,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -117,7 +139,7 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("anthropic: returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -136,6 +158,15 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 	var result compiler.LLMResult
 	if err := json.Unmarshal([]byte(msgResp.Content[0].Text), &result); err != nil {
 		return nil, fmt.Errorf("anthropic: parse classification JSON: %w", err)
+	}
+
+	// Validate confidence range
+	if math.IsNaN(result.Confidence) || math.IsInf(result.Confidence, 0) || result.Confidence < 0 || result.Confidence > 1 {
+		return nil, fmt.Errorf("anthropic: confidence %f out of range [0,1]", result.Confidence)
+	}
+	// Cap keyword count to prevent abuse
+	if len(result.Keywords) > 50 {
+		result.Keywords = result.Keywords[:50]
 	}
 
 	// Validate category is in the provided list

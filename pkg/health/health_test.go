@@ -157,7 +157,10 @@ type memHealthStore struct {
 	entries []EntityPriors
 }
 
-func (m *memHealthStore) LoadHealthPriors() ([]EntityPriors, error) {
+func (m *memHealthStore) LoadHealthPriors(maxEntries int) ([]EntityPriors, error) {
+	if maxEntries > 0 && len(m.entries) > maxEntries {
+		return m.entries[:maxEntries], nil
+	}
 	return m.entries, nil
 }
 

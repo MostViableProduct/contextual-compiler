@@ -12,6 +12,13 @@ import (
 	"github.com/Yes-League/contextual-compiler/pkg/compiler"
 )
 
+const (
+	maxContentLen = 100_000 // 100 KB
+	maxFieldLen   = 1_000
+	maxPayloadLen = 512_000 // 512 KB
+	maxBodySize   = 1 << 20 // 1 MiB
+)
+
 // Handler wraps a compiler and exposes HTTP endpoints.
 type Handler struct {
 	compiler *compiler.Compiler
@@ -78,6 +85,7 @@ type ClassifyRequest struct {
 }
 
 func (h *Handler) handleClassify(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	var req ClassifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -91,6 +99,14 @@ func (h *Handler) handleClassify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing required field: content")
 		return
 	}
+	if len(req.Content) > maxContentLen {
+		writeError(w, http.StatusBadRequest, "content exceeds maximum length")
+		return
+	}
+	if len(req.Type) > maxFieldLen || len(req.Source) > maxFieldLen || len(req.TenantID) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field exceeds maximum length")
+		return
+	}
 
 	result, err := h.compiler.Classify(r.Context(), compiler.Signal{
 		TenantID: req.TenantID,
@@ -100,7 +116,8 @@ func (h *Handler) handleClassify(w http.ResponseWriter, r *http.Request) {
 		Payload:  req.Payload,
 	})
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		log.Printf("api: classify error: %v", err)
+		writeError(w, http.StatusUnprocessableEntity, "classification failed")
 		return
 	}
 
@@ -128,6 +145,7 @@ type ClassifySignalRequest struct {
 }
 
 func (h *Handler) handleClassifySignal(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	var req ClassifySignalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -141,10 +159,19 @@ func (h *Handler) handleClassifySignal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing required field: payload")
 		return
 	}
+	if len(req.Payload) > maxPayloadLen {
+		writeError(w, http.StatusBadRequest, "payload exceeds maximum length")
+		return
+	}
+	if len(req.Type) > maxFieldLen || len(req.Source) > maxFieldLen || len(req.TenantID) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field exceeds maximum length")
+		return
+	}
 
 	result, err := h.compiler.ClassifySignal(r.Context(), req.TenantID, req.Source, req.Type, req.Payload)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		log.Printf("api: classify signal error: %v", err)
+		writeError(w, http.StatusUnprocessableEntity, "signal classification failed")
 		return
 	}
 
@@ -156,6 +183,10 @@ func (h *Handler) handleEntityHealth(w http.ResponseWriter, r *http.Request) {
 	entityID := r.PathValue("entity_id")
 	if tenantID == "" || entityID == "" {
 		writeError(w, http.StatusBadRequest, "tenant_id and entity_id are required")
+		return
+	}
+	if len(tenantID) > maxFieldLen || len(entityID) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field exceeds maximum length")
 		return
 	}
 
@@ -180,7 +211,12 @@ func (h *Handler) handleRecordHealthEvent(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "tenant_id and entity_id are required")
 		return
 	}
+	if len(tenantID) > maxFieldLen || len(entityID) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field exceeds maximum length")
+		return
+	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	var req RecordHealthEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -190,6 +226,20 @@ func (h *Handler) handleRecordHealthEvent(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "missing required field: severity")
 		return
 	}
+	if len(req.Severity) > maxFieldLen || len(req.Category) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field exceeds maximum length")
+		return
+	}
+	if math.IsNaN(req.Confidence) || math.IsInf(req.Confidence, 0) || req.Confidence < 0 || req.Confidence > 1 {
+		writeError(w, http.StatusBadRequest, "confidence must be between 0.0 and 1.0")
+		return
+	}
+	if severities := h.compiler.ValidSeverities(); len(severities) > 0 {
+		if !severities[req.Severity] {
+			writeError(w, http.StatusBadRequest, "unknown severity level")
+			return
+		}
+	}
 
 	h.compiler.RecordHealthEvent(tenantID, entityID, req.Severity, req.Category, req.Confidence)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
@@ -198,7 +248,8 @@ func (h *Handler) handleRecordHealthEvent(w http.ResponseWriter, r *http.Request
 func (h *Handler) handlePromoteKeywords(w http.ResponseWriter, r *http.Request) {
 	count, err := h.compiler.PromoteKeywords()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("api: promote keywords error: %v", err)
+		writeError(w, http.StatusInternalServerError, "keyword promotion failed")
 		return
 	}
 	if h.metrics != nil && count > 0 {
@@ -209,7 +260,8 @@ func (h *Handler) handlePromoteKeywords(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) handleFlushState(w http.ResponseWriter, r *http.Request) {
 	if err := h.compiler.FlushState(); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("api: flush state error: %v", err)
+		writeError(w, http.StatusInternalServerError, "state flush failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "flushed"})

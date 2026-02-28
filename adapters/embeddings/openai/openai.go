@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,9 +43,16 @@ type Client struct {
 // Option configures a Client.
 type Option func(*Client)
 
+// modelNameRe restricts model names to safe characters.
+var modelNameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
 // WithModel overrides the default model.
 func WithModel(model string) Option {
-	return func(c *Client) { c.model = model }
+	return func(c *Client) {
+		if modelNameRe.MatchString(model) {
+			c.model = model
+		}
+	}
 }
 
 // WithTimeout overrides the default HTTP timeout.
@@ -53,7 +62,14 @@ func WithTimeout(d time.Duration) Option {
 
 // WithBaseURL overrides the API base URL (useful for proxies or testing).
 func WithBaseURL(u string) Option {
-	return func(c *Client) { c.baseURL = strings.TrimRight(u, "/") }
+	return func(c *Client) {
+		u = strings.TrimRight(u, "/")
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+			return // silently ignore invalid URLs
+		}
+		c.baseURL = u
+	}
 }
 
 // WithDimensions overrides the default embedding dimensions.
@@ -64,7 +80,12 @@ func WithDimensions(d int) Option {
 // New creates an OpenAI embedding client.
 func New(apiKey string, opts ...Option) *Client {
 	c := &Client{
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		httpClient: &http.Client{
+			Timeout: defaultTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		apiKey:     apiKey,
 		model:      defaultModel,
 		baseURL:    defaultBaseURL,
@@ -110,7 +131,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("openai-embed: returned %d: %s", resp.StatusCode, string(respBody))
 	}
 

@@ -185,16 +185,14 @@ func (g *BayesianGate) ShouldSkipLLM(tenantID, category, sourceType string, heur
 func (g *BayesianGate) getPrior(tenantID, category, sourceType string) BetaPrior {
 	key := GateKey{TenantID: tenantID, Category: category, SourceType: sourceType}
 
-	g.mu.RLock()
+	g.mu.Lock()
 	entry, exists := g.entries[key]
-	g.mu.RUnlock()
-
 	if exists && entry.prior.Observations >= g.config.HierarchicalMinObs {
-		g.mu.Lock()
 		entry.lastAccess = time.Now()
 		g.mu.Unlock()
 		return entry.prior
 	}
+	g.mu.Unlock()
 
 	// Hierarchical fallback: blend specific and pooled priors
 	if exists && entry.prior.Observations > 0 {
@@ -259,8 +257,27 @@ func (g *BayesianGate) updatePooledPrior(tenantID, category string, agreed bool)
 	if !exists {
 		p = &BetaPrior{Alpha: 2.0, Beta: 2.0}
 		g.pooled[poolKey] = p
+		// Evict if over capacity
+		if len(g.pooled) > g.config.MaxEntries {
+			g.evictOldestPooled()
+		}
 	}
 	p.Update(agreed)
+}
+
+// evictOldestPooled removes the pooled entry with the fewest observations. Must hold g.pooledMu.
+func (g *BayesianGate) evictOldestPooled() {
+	var oldestKey string
+	oldestObs := int(^uint(0) >> 1) // max int
+	for k, v := range g.pooled {
+		if v.Observations < oldestObs {
+			oldestKey = k
+			oldestObs = v.Observations
+		}
+	}
+	if oldestKey != "" {
+		delete(g.pooled, oldestKey)
+	}
 }
 
 // evictIfNeeded removes the LRU entry. Must hold g.mu.

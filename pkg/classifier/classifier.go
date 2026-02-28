@@ -408,9 +408,15 @@ func FlattenPayload(payload json.RawMessage) string {
 	return FlattenToString(raw)
 }
 
+const maxFlattenDepth = 20
+
 // FlattenToString converts arbitrary JSON content into a searchable string.
 func FlattenToString(v interface{}) string {
-	if v == nil {
+	return flattenToString(v, 0)
+}
+
+func flattenToString(v interface{}, depth int) string {
+	if depth > maxFlattenDepth || v == nil {
 		return ""
 	}
 	switch val := v.(type) {
@@ -419,13 +425,13 @@ func FlattenToString(v interface{}) string {
 	case map[string]interface{}:
 		parts := make([]string, 0, len(val))
 		for k, child := range val {
-			parts = append(parts, k+" "+FlattenToString(child))
+			parts = append(parts, k+" "+flattenToString(child, depth+1))
 		}
 		return strings.Join(parts, " ")
 	case []interface{}:
 		parts := make([]string, 0, len(val))
 		for _, child := range val {
-			parts = append(parts, FlattenToString(child))
+			parts = append(parts, flattenToString(child, depth+1))
 		}
 		return strings.Join(parts, " ")
 	default:

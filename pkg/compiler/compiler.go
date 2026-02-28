@@ -268,6 +268,11 @@ func (c *Compiler) HasStorage() bool {
 	return c.deps.GateStore != nil || c.deps.HealthStore != nil || c.deps.KeywordStore != nil
 }
 
+// ValidSeverities returns the set of configured health severity names.
+func (c *Compiler) ValidSeverities() map[string]bool {
+	return c.health.ValidSeverities()
+}
+
 // --- internal helpers ---
 
 func (c *Compiler) categoryNames() []string {

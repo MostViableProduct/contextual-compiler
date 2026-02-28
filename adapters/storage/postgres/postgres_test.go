@@ -165,7 +165,7 @@ func TestHealthStore(t *testing.T) {
 	}
 
 	// Load
-	loaded, err := store.LoadHealthPriors()
+	loaded, err := store.LoadHealthPriors(1000)
 	if err != nil {
 		t.Fatalf("LoadHealthPriors: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestHealthStore(t *testing.T) {
 		t.Fatalf("FlushHealthPriors (upsert): %v", err)
 	}
 
-	loaded, err = store.LoadHealthPriors()
+	loaded, err = store.LoadHealthPriors(1000)
 	if err != nil {
 		t.Fatalf("LoadHealthPriors after upsert: %v", err)
 	}

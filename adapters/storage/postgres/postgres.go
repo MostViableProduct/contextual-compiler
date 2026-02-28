@@ -104,11 +104,11 @@ func (s *Store) FlushGateEntries(entries []gate.GateEntry) error {
 
 // --- health.HealthStore ---
 
-// LoadHealthPriors loads all entity health priors.
-func (s *Store) LoadHealthPriors() ([]health.EntityPriors, error) {
+// LoadHealthPriors loads up to maxEntries entity health priors.
+func (s *Store) LoadHealthPriors(maxEntries int) ([]health.EntityPriors, error) {
 	rows, err := s.db.Query(`
-		SELECT tenant_id, entity_id, priors FROM compiler_health_priors
-	`)
+		SELECT tenant_id, entity_id, priors FROM compiler_health_priors LIMIT $1
+	`, maxEntries)
 	if err != nil {
 		return nil, fmt.Errorf("load health priors: %w", err)
 	}
