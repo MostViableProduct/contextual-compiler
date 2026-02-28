@@ -45,6 +45,13 @@ type VectorMatch struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// Embedder produces vector embeddings from text. Consumed by vector stores
+// internally — not added to Deps since the vector store owns its embedder.
+type Embedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	Dimensions() int
+}
+
 // EventSink receives domain events emitted by the compiler.
 // If nil, events are silently discarded. Implementations may publish to
 // message buses, webhooks, log files, or any other destination.

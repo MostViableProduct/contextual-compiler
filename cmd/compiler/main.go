@@ -26,9 +26,12 @@ import (
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 
+	openaiembed "github.com/Yes-League/contextual-compiler/adapters/embeddings/openai"
 	"github.com/Yes-League/contextual-compiler/adapters/events/logwriter"
 	"github.com/Yes-League/contextual-compiler/adapters/llm/anthropic"
+	"github.com/Yes-League/contextual-compiler/adapters/llm/gemini"
 	"github.com/Yes-League/contextual-compiler/adapters/llm/openai"
+	memoryvec "github.com/Yes-League/contextual-compiler/adapters/vector/memory"
 	"github.com/Yes-League/contextual-compiler/adapters/storage/postgres"
 	sqliteadapter "github.com/Yes-League/contextual-compiler/adapters/storage/sqlite"
 	"github.com/Yes-League/contextual-compiler/api"
@@ -49,14 +52,18 @@ func main() {
 	deps, cleanup := buildDeps()
 	defer cleanup()
 
+	metrics := &api.Metrics{}
+
 	c := compiler.New(cfg, deps, compiler.Callbacks{
 		OnClassify: func(source, category string) {
 			log.Printf("classify: source=%s category=%s", source, category)
 		},
 		OnGateSkip: func() {
+			metrics.GateSkips.Add(1)
 			log.Printf("gate: skipped LLM call")
 		},
 		OnLLMFallback: func(err error) {
+			metrics.LLMFallbacks.Add(1)
 			log.Printf("llm: fallback to heuristic: %v", err)
 		},
 		OnAgreement: func(agreed bool) {
@@ -71,7 +78,7 @@ func main() {
 		log.Printf("Warning: failed to load state: %v", err)
 	}
 
-	handler := api.NewHandler(c)
+	handler := api.NewHandler(c, api.WithMetrics(metrics))
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -172,15 +179,25 @@ func buildDeps() (compiler.Deps, func()) {
 		log.Println("Storage: in-memory (no persistence)")
 	}
 
-	// Wire LLM adapter: prefer Anthropic, fall back to OpenAI
+	// Wire LLM adapter: prefer Anthropic, fall back to OpenAI, then Gemini
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		deps.LLM = anthropic.New(key)
 		log.Println("LLM: Anthropic")
 	} else if key := os.Getenv("OPENAI_API_KEY"); key != "" {
 		deps.LLM = openai.New(key)
 		log.Println("LLM: OpenAI")
+	} else if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		deps.LLM = gemini.New(key)
+		log.Println("LLM: Gemini")
 	} else {
 		log.Println("LLM: none (pure heuristic mode)")
+	}
+
+	// Wire vector search: requires OpenAI API key for embeddings
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		embedder := openaiembed.New(key)
+		deps.Vector = memoryvec.New(embedder)
+		log.Println("Vector: in-memory (OpenAI embeddings)")
 	}
 
 	// Wire event sink
@@ -233,15 +250,18 @@ func defaultDemoConfig() compiler.Config {
 
 // Ensure interfaces are satisfied at compile time.
 var (
-	_ gate.GateStore       = (*postgres.Store)(nil)
-	_ health.HealthStore   = (*postgres.Store)(nil)
+	_ gate.GateStore        = (*postgres.Store)(nil)
+	_ health.HealthStore    = (*postgres.Store)(nil)
 	_ keywords.KeywordStore = (*postgres.Store)(nil)
 
-	_ gate.GateStore       = (*sqliteadapter.Store)(nil)
-	_ health.HealthStore   = (*sqliteadapter.Store)(nil)
+	_ gate.GateStore        = (*sqliteadapter.Store)(nil)
+	_ health.HealthStore    = (*sqliteadapter.Store)(nil)
 	_ keywords.KeywordStore = (*sqliteadapter.Store)(nil)
 
 	_ compiler.LLMClassifier = (*anthropic.Client)(nil)
 	_ compiler.LLMClassifier = (*openai.Client)(nil)
+	_ compiler.LLMClassifier = (*gemini.Client)(nil)
 	_ compiler.EventSink     = (*logwriter.Sink)(nil)
+	_ compiler.Embedder      = (*openaiembed.Client)(nil)
+	_ compiler.VectorSearcher = (*memoryvec.Store)(nil)
 )

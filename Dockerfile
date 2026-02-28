@@ -10,14 +10,19 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /compiler ./cmd/compiler/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /healthcheck ./cmd/healthcheck/
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /compiler /compiler
+COPY --from=builder /healthcheck /healthcheck
 COPY --from=builder /build/config/examples/ /config/examples/
 
 EXPOSE 8200
 
 USER nonroot:nonroot
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/healthcheck"]
 
 ENTRYPOINT ["/compiler"]

@@ -14,11 +14,24 @@ import (
 // Handler wraps a compiler and exposes HTTP endpoints.
 type Handler struct {
 	compiler *compiler.Compiler
+	metrics  *Metrics
+}
+
+// HandlerOption configures a Handler.
+type HandlerOption func(*Handler)
+
+// WithMetrics attaches a Metrics instance for counter tracking.
+func WithMetrics(m *Metrics) HandlerOption {
+	return func(h *Handler) { h.metrics = m }
 }
 
 // NewHandler creates a Handler from a configured compiler.
-func NewHandler(c *compiler.Compiler) *Handler {
-	return &Handler{compiler: c}
+func NewHandler(c *compiler.Compiler, opts ...HandlerOption) *Handler {
+	h := &Handler{compiler: c}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // RegisterRoutes registers all API routes on a ServeMux.
@@ -31,10 +44,27 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/health/{tenant_id}/{entity_id}/events", h.handleRecordHealthEvent)
 	mux.HandleFunc("POST /v1/keywords/promote", h.handlePromoteKeywords)
 	mux.HandleFunc("POST /v1/state/flush", h.handleFlushState)
+	if h.metrics != nil {
+		mux.HandleFunc("GET /metrics", h.metrics.handleMetrics)
+	}
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	depStatus := func(has bool) string {
+		if has {
+			return "connected"
+		}
+		return "disabled"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"dependencies": map[string]string{
+			"llm":     depStatus(h.compiler.HasLLM()),
+			"vector":  depStatus(h.compiler.HasVector()),
+			"events":  depStatus(h.compiler.HasEvents()),
+			"storage": depStatus(h.compiler.HasStorage()),
+		},
+	})
 }
 
 // ClassifyRequest is the request body for POST /v1/classify.
@@ -71,6 +101,18 @@ func (h *Handler) handleClassify(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
+	}
+
+	if h.metrics != nil {
+		h.metrics.ClassifyTotal.Add(1)
+		switch result.ClassificationSource {
+		case "llm":
+			h.metrics.ClassifyLLM.Add(1)
+		case "heuristic_gated":
+			h.metrics.ClassifyGated.Add(1)
+		default:
+			h.metrics.ClassifyHeuristic.Add(1)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -116,6 +158,9 @@ func (h *Handler) handleEntityHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.metrics != nil {
+		h.metrics.HealthQueries.Add(1)
+	}
 	result := h.compiler.ScoreHealth(tenantID, entityID)
 	writeJSON(w, http.StatusOK, result)
 }
@@ -154,6 +199,9 @@ func (h *Handler) handlePromoteKeywords(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if h.metrics != nil && count > 0 {
+		h.metrics.KeywordsPromoted.Add(int64(count))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"promoted": count})
 }

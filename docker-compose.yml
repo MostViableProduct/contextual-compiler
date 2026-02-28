@@ -1,0 +1,51 @@
+services:
+  compiler:
+    build: .
+    ports:
+      - "8200:8200"
+    environment:
+      - PORT=8200
+      - LOG_EVENTS=true
+    healthcheck:
+      test: ["/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: compiler
+      POSTGRES_PASSWORD: compiler
+      POSTGRES_DB: contextual_compiler
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compiler"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  compiler-with-postgres:
+    build: .
+    ports:
+      - "8201:8200"
+    environment:
+      - PORT=8200
+      - DATABASE_URL=postgres://compiler:compiler@postgres:5432/contextual_compiler?sslmode=disable
+      - LOG_EVENTS=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  pgdata:

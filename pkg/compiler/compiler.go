@@ -252,6 +252,20 @@ func (c *Compiler) Runtime() *classifier.LearnedKeywordStore {
 	return c.runtime
 }
 
+// HasLLM reports whether an LLM classifier adapter is configured.
+func (c *Compiler) HasLLM() bool { return c.deps.LLM != nil }
+
+// HasVector reports whether a vector search adapter is configured.
+func (c *Compiler) HasVector() bool { return c.deps.Vector != nil }
+
+// HasEvents reports whether an event sink adapter is configured.
+func (c *Compiler) HasEvents() bool { return c.deps.Events != nil }
+
+// HasStorage reports whether any storage adapter is configured.
+func (c *Compiler) HasStorage() bool {
+	return c.deps.GateStore != nil || c.deps.HealthStore != nil || c.deps.KeywordStore != nil
+}
+
 // --- internal helpers ---
 
 func (c *Compiler) categoryNames() []string {

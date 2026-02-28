@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Yes-League/contextual-compiler/pkg/classifier"
@@ -47,10 +48,25 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("Expected 200, got %d", w.Code)
 	}
 
-	var resp map[string]string
+	var resp struct {
+		Status       string            `json:"status"`
+		Dependencies map[string]string `json:"dependencies"`
+	}
 	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "ok" {
-		t.Errorf("Expected status ok, got %s", resp["status"])
+	if resp.Status != "ok" {
+		t.Errorf("Expected status ok, got %s", resp.Status)
+	}
+	if resp.Dependencies["llm"] != "disabled" {
+		t.Errorf("Expected llm=disabled, got %s", resp.Dependencies["llm"])
+	}
+	if resp.Dependencies["vector"] != "disabled" {
+		t.Errorf("Expected vector=disabled, got %s", resp.Dependencies["vector"])
+	}
+	if resp.Dependencies["events"] != "disabled" {
+		t.Errorf("Expected events=disabled, got %s", resp.Dependencies["events"])
+	}
+	if resp.Dependencies["storage"] != "disabled" {
+		t.Errorf("Expected storage=disabled, got %s", resp.Dependencies["storage"])
 	}
 }
 
@@ -278,5 +294,61 @@ func TestFlushStateEndpoint(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	m := &Metrics{}
+	h := NewHandler(testCompiler(), WithMetrics(m))
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Do a classify to increment counters
+	body := ClassifyRequest{
+		Source:  "prometheus",
+		Type:    "metric",
+		Content: "High p99 latency detected",
+	}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/v1/classify", bytes.NewReader(b))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Classify failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Get metrics
+	req = httptest.NewRequest("GET", "/metrics", nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	metricsBody := w.Body.String()
+	if !strings.Contains(metricsBody, "compiler_classify_total 1") {
+		t.Errorf("Expected classify_total=1 in metrics output:\n%s", metricsBody)
+	}
+	if !strings.Contains(metricsBody, "text/plain") {
+		ct := w.Header().Get("Content-Type")
+		if !strings.Contains(ct, "text/plain") {
+			t.Errorf("Expected text/plain content type, got %s", ct)
+		}
+	}
+}
+
+func TestMetricsEndpoint_NotRegisteredWithoutMetrics(t *testing.T) {
+	h := NewHandler(testCompiler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Without metrics, /metrics should 404
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected 404 without metrics, got %d", w.Code)
 	}
 }

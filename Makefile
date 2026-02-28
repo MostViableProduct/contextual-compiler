@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration lint vet docker clean
+.PHONY: build test test-unit test-integration lint vet bench docker clean
 
 build:
 	go build -ldflags="-s -w" -o bin/compiler ./cmd/compiler/
@@ -17,6 +17,9 @@ lint: vet
 
 vet:
 	go vet ./...
+
+bench:
+	go test -bench=. -benchmem ./...
 
 docker:
 	docker build -t contextual-compiler .
