@@ -110,7 +110,7 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", apiVersion)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //#nosec G704 -- URL is admin-configured API endpoint
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: request failed: %w", err)
 	}

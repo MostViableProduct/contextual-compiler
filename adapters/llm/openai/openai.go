@@ -109,7 +109,7 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //#nosec G704 -- URL is admin-configured API endpoint
 	if err != nil {
 		return nil, fmt.Errorf("openai: request failed: %w", err)
 	}

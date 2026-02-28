@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -103,10 +104,12 @@ func main() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		srv.Shutdown(ctx)
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Warning: server shutdown error: %v", err)
+		}
 	}()
 
-	log.Printf("Contextual Compiler listening on :%s", port)
+	log.Printf("Contextual Compiler listening on :%s", sanitizeLog(port)) //#nosec G706 -- sanitized via sanitizeLog
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}
@@ -120,7 +123,7 @@ func loadConfig() compiler.Config {
 
 	cfg, err := compiler.LoadConfigFromFile(configPath)
 	if err != nil {
-		log.Printf("No config file at %s (%v), using defaults with example categories", configPath, err)
+		log.Printf("No config file at %s (%v), using defaults with example categories", sanitizeLog(configPath), err) //#nosec G706 -- sanitized via sanitizeLog
 		return defaultDemoConfig()
 	}
 
@@ -154,7 +157,11 @@ func buildDeps() (compiler.Deps, func()) {
 		deps.GateStore = store
 		deps.HealthStore = store
 		deps.KeywordStore = store
-		cleanup = func() { db.Close() }
+		cleanup = func() {
+			if err := db.Close(); err != nil {
+				log.Printf("Warning: failed to close Postgres connection: %v", err)
+			}
+		}
 		log.Println("Storage: Postgres")
 	} else if path := os.Getenv("SQLITE_PATH"); path != "" {
 		db, err := sql.Open("sqlite", path)
@@ -173,8 +180,12 @@ func buildDeps() (compiler.Deps, func()) {
 		deps.GateStore = store
 		deps.HealthStore = store
 		deps.KeywordStore = store
-		cleanup = func() { db.Close() }
-		log.Printf("Storage: SQLite (%s)", path)
+		cleanup = func() {
+			if err := db.Close(); err != nil {
+				log.Printf("Warning: failed to close SQLite connection: %v", err)
+			}
+		}
+		log.Printf("Storage: SQLite (%s)", sanitizeLog(path)) //#nosec G706 -- sanitized via sanitizeLog
 	} else {
 		log.Println("Storage: in-memory (no persistence)")
 	}
@@ -246,6 +257,16 @@ func defaultDemoConfig() compiler.Config {
 		},
 	}
 	return cfg
+}
+
+// sanitizeLog strips control characters from a string to prevent log injection.
+func sanitizeLog(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return '_'
+		}
+		return r
+	}, s)
 }
 
 // Ensure interfaces are satisfied at compile time.

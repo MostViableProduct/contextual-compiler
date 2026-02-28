@@ -103,7 +103,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //#nosec G704 -- URL is admin-configured API endpoint
 	if err != nil {
 		return nil, fmt.Errorf("openai-embed: request failed: %w", err)
 	}

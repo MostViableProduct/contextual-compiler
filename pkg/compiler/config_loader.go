@@ -14,7 +14,7 @@ import (
 // LoadConfigFromFile loads a Config from a JSON or YAML file.
 // The format is auto-detected by file extension (.json, .yaml, .yml).
 func LoadConfigFromFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //#nosec G304 -- path is admin-controlled via CONFIG_PATH env var
 	if err != nil {
 		return Config{}, fmt.Errorf("read config file: %w", err)
 	}

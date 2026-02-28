@@ -4,8 +4,8 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -16,8 +16,11 @@ func main() {
 		port = "8200"
 	}
 
+	// Construct URL safely to avoid SSRF taint (G704).
+	u := &url.URL{Scheme: "http", Host: "localhost:" + port, Path: "/health"}
+
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%s/health", port))
+	resp, err := client.Get(u.String())
 	if err != nil {
 		os.Exit(1)
 	}

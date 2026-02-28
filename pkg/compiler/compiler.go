@@ -156,8 +156,10 @@ func (c *Compiler) Classify(ctx context.Context, signal Signal) (*ClassifyResult
 					c.callbacks.OnAgreement(agreed)
 				}
 
-				// Async: keyword learning + gate update
-				go c.recordComparison(signal, heuristicResult, llmResult, agreed)
+				// Async: keyword learning + gate update.
+				// Intentionally detached from request context — background
+				// work must complete even after the HTTP response is sent.
+				go c.recordComparison(signal, heuristicResult, llmResult, agreed) //#nosec G118
 			}
 		} else if err != nil {
 			if c.callbacks.OnLLMFallback != nil {
