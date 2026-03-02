@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Yes-League/contextual-compiler/pkg/classifier"
+	"github.com/MostViableProduct/contextual-compiler/pkg/classifier"
 )
 
 func testConfig() Config {

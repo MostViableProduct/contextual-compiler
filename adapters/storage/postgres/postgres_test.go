@@ -7,8 +7,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/Yes-League/contextual-compiler/pkg/gate"
-	"github.com/Yes-League/contextual-compiler/pkg/health"
+	"github.com/MostViableProduct/contextual-compiler/pkg/gate"
+	"github.com/MostViableProduct/contextual-compiler/pkg/health"
 )
 
 func testDB(t *testing.T) *sql.DB {

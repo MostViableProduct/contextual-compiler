@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yes-League/contextual-compiler/pkg/classifier"
-	"github.com/Yes-League/contextual-compiler/pkg/compiler"
+	"github.com/MostViableProduct/contextual-compiler/pkg/classifier"
+	"github.com/MostViableProduct/contextual-compiler/pkg/compiler"
 )
 
 func testCompiler() *compiler.Compiler {

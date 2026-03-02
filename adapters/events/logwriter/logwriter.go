@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yes-League/contextual-compiler/pkg/compiler"
+	"github.com/MostViableProduct/contextual-compiler/pkg/compiler"
 )
 
 // Compile-time interface check.

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Yes-League/contextual-compiler/pkg/compiler"
+	"github.com/MostViableProduct/contextual-compiler/pkg/compiler"
 )
 
 // stubEmbedder returns deterministic unit vectors for testing.

@@ -23,7 +23,7 @@ Signal ──► Heuristic Classifier ──► Bayesian Gate ──► LLM Clas
 ### Binary
 
 ```bash
-go install github.com/Yes-League/contextual-compiler/cmd/compiler@latest
+go install github.com/MostViableProduct/contextual-compiler/cmd/compiler@latest
 compiler
 # Listening on :8200
 ```
@@ -176,8 +176,8 @@ All adapters are optional. The compiler gracefully degrades to in-memory, heuris
 
 ```go
 import (
-    "github.com/Yes-League/contextual-compiler/pkg/compiler"
-    "github.com/Yes-League/contextual-compiler/pkg/classifier"
+    "github.com/MostViableProduct/contextual-compiler/pkg/compiler"
+    "github.com/MostViableProduct/contextual-compiler/pkg/classifier"
 )
 
 cfg := compiler.DefaultConfig()

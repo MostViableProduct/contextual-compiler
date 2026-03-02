@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Yes-League/contextual-compiler/pkg/compiler"
+	"github.com/MostViableProduct/contextual-compiler/pkg/compiler"
 )
 
 // deterministicEmbedder returns vectors based on a simple hash for benchmarks.

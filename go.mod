@@ -1,6 +1,6 @@
-module github.com/Yes-League/contextual-compiler
+module github.com/MostViableProduct/contextual-compiler
 
-go 1.24.0
+go 1.24.13
 
 require (
 	github.com/lib/pq v1.11.2

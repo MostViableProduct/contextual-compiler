@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yes-League/contextual-compiler/pkg/classifier"
+	"github.com/MostViableProduct/contextual-compiler/pkg/classifier"
 )
 
 func BenchmarkCompilerClassify_HeuristicOnly(b *testing.B) {

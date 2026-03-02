@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Yes-League/contextual-compiler/pkg/classifier"
-	"github.com/Yes-League/contextual-compiler/pkg/gate"
-	"github.com/Yes-League/contextual-compiler/pkg/health"
+	"github.com/MostViableProduct/contextual-compiler/pkg/classifier"
+	"github.com/MostViableProduct/contextual-compiler/pkg/gate"
+	"github.com/MostViableProduct/contextual-compiler/pkg/health"
 )
 
 // Store implements gate.GateStore, health.HealthStore, and keywords.KeywordStore
