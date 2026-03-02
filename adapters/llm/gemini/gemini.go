@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -135,9 +136,9 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 		return nil, fmt.Errorf("gemini: marshal request: %w", err)
 	}
 
-	// NOTE: Gemini's API requires the key as a query parameter. This means
-	// the key will appear in proxy/CDN access logs. Redirect following is
-	// disabled to prevent key leakage via redirects. See SECURITY.md.
+	// NOTE: Gemini API requires the key as a URL parameter - this is an API design limitation.
+	// Ensure logs are filtered/stripped to avoid logging the full URL with the key.
+	// Redirect following is disabled to prevent key leakage via redirects. See SECURITY.md.
 	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s",
 		c.baseURL, c.model, c.apiKey)
 
@@ -155,7 +156,8 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("gemini: returned %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("llm: request failed (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("llm: request failed with status %d", resp.StatusCode)
 	}
 
 	var genResp struct {

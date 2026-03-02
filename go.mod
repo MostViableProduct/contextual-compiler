@@ -1,9 +1,10 @@
 module github.com/Yes-League/contextual-compiler
 
-go 1.26.0
+go 1.24.0
 
 require (
 	github.com/lib/pq v1.11.2
+	golang.org/x/time v0.14.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )

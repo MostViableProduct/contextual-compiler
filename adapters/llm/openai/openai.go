@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -139,7 +140,8 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("openai: returned %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("llm: request failed (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("llm: request failed with status %d", resp.StatusCode)
 	}
 
 	var chatResp struct {

@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 
@@ -43,10 +45,58 @@ import (
 	"github.com/Yes-League/contextual-compiler/pkg/keywords"
 )
 
+// classifyLimiter allows 10 requests per second with a burst of 30.
+var classifyLimiter = rate.NewLimiter(rate.Limit(10), 30)
+
+// authMiddleware validates the Authorization: Bearer <apiKey> header on every request.
+func authMiddleware(apiKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "Bearer "+apiKey {
+				w.Header().Set("Content-Type", "application/json")
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// rateLimitMiddleware rejects requests when the token-bucket limiter is exhausted.
+func rateLimitMiddleware(limiter *rate.Limiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !limiter.Allow() {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "1")
+				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// securityHeadersMiddleware sets defensive HTTP response headers on every response.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8200"
+	}
+
+	apiKey := os.Getenv("API_KEY")
+	if apiKey == "" {
+		log.Fatal("API_KEY environment variable is required")
 	}
 
 	cfg := loadConfig()
@@ -57,7 +107,7 @@ func main() {
 
 	c := compiler.New(cfg, deps, compiler.Callbacks{
 		OnClassify: func(source, category string) {
-			log.Printf("classify: source=%s category=%s", source, category)
+			log.Printf("classify: source=%s category=%s", sanitizeLog(source), sanitizeLog(category))
 		},
 		OnGateSkip: func() {
 			metrics.GateSkips.Add(1)
@@ -83,12 +133,23 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
+	// Build middleware chain:
+	// securityHeaders -> auth -> rateLimit (for classify paths) -> mux
+	//
+	// All routes require auth. Rate limiting is applied globally here;
+	// it covers classify endpoints which are the most LLM-intensive.
+	var h http.Handler = mux
+	h = rateLimitMiddleware(classifyLimiter)(h)
+	h = authMiddleware(apiKey)(h)
+	h = securityHeadersMiddleware(h)
+
 	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + port,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Graceful shutdown
@@ -261,12 +322,12 @@ func defaultDemoConfig() compiler.Config {
 
 // sanitizeLog strips control characters from a string to prevent log injection.
 func sanitizeLog(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return '_'
-		}
-		return r
-	}, s)
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	if len(s) > 200 {
+		s = s[:200] + "..."
+	}
+	return s
 }
 
 // Ensure interfaces are satisfied at compile time.

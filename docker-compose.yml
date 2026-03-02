@@ -19,7 +19,9 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: compiler
-      POSTGRES_PASSWORD: compiler
+      # REQUIRED: Set a strong password in production via environment variable or secrets manager
+      # Never use this placeholder in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: contextual_compiler
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -35,7 +37,7 @@ services:
       - "8201:8200"
     environment:
       - PORT=8200
-      - DATABASE_URL=postgres://compiler:compiler@postgres:5432/contextual_compiler?sslmode=disable
+      - DATABASE_URL=postgres://compiler:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/contextual_compiler?sslmode=require
       - LOG_EVENTS=true
     depends_on:
       postgres:
