@@ -10,6 +10,7 @@ package memoryvec
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -61,9 +62,15 @@ func (s *Store) Add(entries ...Entry) {
 // AddTexts embeds the given texts and adds them as entries. IDs and texts
 // must have the same length. Metadata is optional (may be nil or shorter).
 func (s *Store) AddTexts(ctx context.Context, ids, texts []string, metadata []map[string]string) error {
+	if len(ids) != len(texts) {
+		return fmt.Errorf("memoryvec: ids and texts must have the same length (got %d ids, %d texts)", len(ids), len(texts))
+	}
 	vectors, err := s.embedder.Embed(ctx, texts)
 	if err != nil {
 		return err
+	}
+	if len(vectors) != len(ids) {
+		return fmt.Errorf("memoryvec: embedder returned %d vectors for %d inputs", len(vectors), len(ids))
 	}
 
 	entries := make([]Entry, len(ids))
@@ -111,6 +118,9 @@ func (s *Store) Len() int {
 // Search implements compiler.VectorSearcher. It embeds the query, computes
 // cosine similarity against all stored vectors, and returns the top-k matches.
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]compiler.VectorMatch, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
 	vectors, err := s.embedder.Embed(ctx, []string{query})
 	if err != nil {
 		return nil, err

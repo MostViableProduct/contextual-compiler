@@ -15,7 +15,9 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -49,13 +51,14 @@ import (
 var classifyLimiter = rate.NewLimiter(rate.Limit(10), 30)
 
 // authMiddleware validates the Authorization: Bearer <apiKey> header on every request.
+// Comparison is constant-time to prevent timing-based key oracle attacks.
 func authMiddleware(apiKey string) func(http.Handler) http.Handler {
+	expected := []byte("Bearer " + apiKey)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader != "Bearer "+apiKey {
-				w.Header().Set("Content-Type", "application/json")
-				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			got := []byte(r.Header.Get("Authorization"))
+			if subtle.ConstantTimeCompare(got, expected) != 1 {
+				writeMiddlewareError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -68,14 +71,22 @@ func rateLimitMiddleware(limiter *rate.Limiter) func(http.Handler) http.Handler 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !limiter.Allow() {
-				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
-				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				writeMiddlewareError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeMiddlewareError writes a JSON error response with the correct Content-Type.
+// Unlike http.Error, this preserves application/json as the Content-Type header.
+func writeMiddlewareError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	body, _ := json.Marshal(map[string]string{"error": message})
+	_, _ = w.Write(body)
 }
 
 // securityHeadersMiddleware sets defensive HTTP response headers on every response.
@@ -130,17 +141,24 @@ func main() {
 	}
 
 	handler := api.NewHandler(c, api.WithMetrics(metrics))
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
 
-	// Build middleware chain:
-	// securityHeaders -> auth -> rateLimit (for classify paths) -> mux
-	//
-	// All routes require auth. Rate limiting is applied globally here;
-	// it covers classify endpoints which are the most LLM-intensive.
+	// protectedMux holds all authenticated routes behind auth + rate limiting.
+	protectedMux := http.NewServeMux()
+	handler.RegisterProtectedRoutes(protectedMux)
+
+	// Build protected middleware chain:
+	// securityHeaders -> auth -> rateLimit -> protectedMux
+	var protected http.Handler = protectedMux
+	protected = rateLimitMiddleware(classifyLimiter)(protected)
+	protected = authMiddleware(apiKey)(protected)
+
+	// Top-level mux: /health is public (Docker healthcheck sends no auth header);
+	// all other routes go through the protected chain.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", handler.HealthHandler())
+	mux.Handle("/", protected)
+
 	var h http.Handler = mux
-	h = rateLimitMiddleware(classifyLimiter)(h)
-	h = authMiddleware(apiKey)(h)
 	h = securityHeadersMiddleware(h)
 
 	srv := &http.Server{

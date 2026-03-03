@@ -43,10 +43,17 @@ func NewHandler(c *compiler.Compiler, opts ...HandlerOption) *Handler {
 	return h
 }
 
-// RegisterRoutes registers all API routes on a ServeMux.
-// The caller is responsible for middleware (auth, CORS, logging, etc.).
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /health", h.handleHealth)
+// HealthHandler returns the HTTP handler for GET /health.
+// It is intentionally separate from RegisterProtectedRoutes so callers can
+// mount it outside the auth middleware chain (Docker healthchecks send no token).
+func (h *Handler) HealthHandler() http.HandlerFunc {
+	return h.handleHealth
+}
+
+// RegisterProtectedRoutes registers all authenticated API routes on a ServeMux.
+// The caller is responsible for auth, rate-limiting, and other middleware.
+// GET /health is not included here — use HealthHandler instead.
+func (h *Handler) RegisterProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/classify", h.handleClassify)
 	mux.HandleFunc("POST /v1/classify/signal", h.handleClassifySignal)
 	mux.HandleFunc("GET /v1/health/{tenant_id}/{entity_id}", h.handleEntityHealth)
@@ -56,6 +63,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if h.metrics != nil {
 		mux.HandleFunc("GET /metrics", h.metrics.handleMetrics)
 	}
+}
+
+// RegisterRoutes registers all API routes on a ServeMux, including /health.
+// Use this when the caller manages auth externally for all routes.
+func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /health", h.handleHealth)
+	h.RegisterProtectedRoutes(mux)
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -122,18 +136,7 @@ func (h *Handler) handleClassify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.metrics != nil {
-		h.metrics.ClassifyTotal.Add(1)
-		switch result.ClassificationSource {
-		case "llm":
-			h.metrics.ClassifyLLM.Add(1)
-		case "heuristic_gated":
-			h.metrics.ClassifyGated.Add(1)
-		default:
-			h.metrics.ClassifyHeuristic.Add(1)
-		}
-	}
-
+	h.recordClassifyMetrics(result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -176,6 +179,7 @@ func (h *Handler) handleClassifySignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.recordClassifyMetrics(result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -266,6 +270,21 @@ func (h *Handler) handleFlushState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "flushed"})
+}
+
+func (h *Handler) recordClassifyMetrics(result *compiler.ClassifyResult) {
+	if h.metrics == nil {
+		return
+	}
+	h.metrics.ClassifyTotal.Add(1)
+	switch result.ClassificationSource {
+	case compiler.SourceLLM:
+		h.metrics.ClassifyLLM.Add(1)
+	case compiler.SourceHeuristicGated:
+		h.metrics.ClassifyGated.Add(1)
+	default:
+		h.metrics.ClassifyHeuristic.Add(1)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

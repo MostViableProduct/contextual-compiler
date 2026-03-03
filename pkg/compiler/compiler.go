@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ func (c *Compiler) Classify(ctx context.Context, signal Signal) (*ClassifyResult
 	result := &ClassifyResult{
 		Category:             heuristicResult.Category,
 		RelevanceScore:       heuristicResult.RelevanceScore,
-		ClassificationSource: "heuristic",
+		ClassificationSource: SourceHeuristic,
 		Confidence:           heuristicResult.Confidence,
 	}
 
@@ -133,7 +134,7 @@ func (c *Compiler) Classify(ctx context.Context, signal Signal) (*ClassifyResult
 
 	// Step 2: Check Bayesian gate
 	if c.gate.ShouldSkipLLM(signal.TenantID, heuristicResult.Category, signal.Type, heuristicResult.Confidence) {
-		result.ClassificationSource = "heuristic_gated"
+		result.ClassificationSource = SourceHeuristicGated
 		c.notifyClassify(result.ClassificationSource, result.Category)
 		c.resolveEntities(ctx, signal, result)
 		return result, nil
@@ -148,7 +149,7 @@ func (c *Compiler) Classify(ctx context.Context, signal Signal) (*ClassifyResult
 			if c.classifier.ValidCategories()[llmResult.Category] {
 				result.Category = llmResult.Category
 				result.Confidence = llmResult.Confidence
-				result.ClassificationSource = "llm"
+				result.ClassificationSource = SourceLLM
 
 				// Track agreement
 				agreed := llmResult.Category == heuristicResult.Category
@@ -281,6 +282,7 @@ func (c *Compiler) categoryNames() []string {
 	for name := range cats {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 

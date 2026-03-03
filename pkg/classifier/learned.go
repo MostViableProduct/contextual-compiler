@@ -14,45 +14,54 @@ type LearnedKeyword struct {
 }
 
 // LearnedKeywordStore is a thread-safe runtime cache of promoted learned keywords.
+// Both GetPromotedKeywords and GetPromotedWeights return pre-built maps that are
+// rebuilt only when Update is called, avoiding per-classify allocations.
 type LearnedKeywordStore struct {
-	mu       sync.RWMutex
-	keywords []LearnedKeyword
+	mu             sync.RWMutex
+	keywords       []LearnedKeyword
+	cachedKeywords map[string][]string
+	cachedWeights  map[string]float64
 }
 
 // NewLearnedKeywordStore creates an empty store.
 func NewLearnedKeywordStore() *LearnedKeywordStore {
-	return &LearnedKeywordStore{}
+	return &LearnedKeywordStore{
+		cachedKeywords: make(map[string][]string),
+		cachedWeights:  make(map[string]float64),
+	}
 }
 
-// GetPromotedKeywords returns a map of category -> keyword list.
+// GetPromotedKeywords returns the cached map of category -> keyword list.
+// The returned map is shared and must not be modified by the caller.
 func (s *LearnedKeywordStore) GetPromotedKeywords() map[string][]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	result := make(map[string][]string)
-	for _, kw := range s.keywords {
-		result[kw.Category] = append(result[kw.Category], kw.Keyword)
-	}
-	return result
+	return s.cachedKeywords
 }
 
-// GetPromotedWeights returns a map of keyword -> weight.
+// GetPromotedWeights returns the cached map of keyword -> weight.
+// The returned map is shared and must not be modified by the caller.
 func (s *LearnedKeywordStore) GetPromotedWeights() map[string]float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	result := make(map[string]float64, len(s.keywords))
-	for _, kw := range s.keywords {
-		result[kw.Keyword] = kw.Weight
-	}
-	return result
+	return s.cachedWeights
 }
 
-// Update replaces the entire set of promoted keywords atomically.
+// Update replaces the entire set of promoted keywords atomically and
+// rebuilds the cached lookup maps.
 func (s *LearnedKeywordStore) Update(keywords []LearnedKeyword) {
+	kw := make(map[string][]string)
+	weights := make(map[string]float64, len(keywords))
+	for _, k := range keywords {
+		kw[k.Category] = append(kw[k.Category], k.Keyword)
+		weights[k.Keyword] = k.Weight
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.keywords = keywords
+	s.cachedKeywords = kw
+	s.cachedWeights = weights
 }
 
 // Count returns the number of currently promoted keywords.

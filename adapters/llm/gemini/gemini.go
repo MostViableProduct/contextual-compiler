@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/MostViableProduct/contextual-compiler/adapters/llm/internal/llmutil"
 	"github.com/MostViableProduct/contextual-compiler/pkg/compiler"
 )
 
@@ -184,25 +184,8 @@ func (c *Client) Classify(ctx context.Context, content, signalType string, categ
 		return nil, fmt.Errorf("gemini: parse classification JSON: %w", err)
 	}
 
-	// Validate confidence range
-	if math.IsNaN(result.Confidence) || math.IsInf(result.Confidence, 0) || result.Confidence < 0 || result.Confidence > 1 {
-		return nil, fmt.Errorf("gemini: confidence %f out of range [0,1]", result.Confidence)
-	}
-	// Cap keyword count to prevent abuse
-	if len(result.Keywords) > 50 {
-		result.Keywords = result.Keywords[:50]
-	}
-
-	// Validate category is in the provided list
-	valid := false
-	for _, cat := range categories {
-		if cat == result.Category {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return nil, fmt.Errorf("gemini: LLM returned unknown category %q", result.Category)
+	if err := llmutil.ValidateResult(&result, categories, "gemini"); err != nil {
+		return nil, err
 	}
 
 	return &result, nil

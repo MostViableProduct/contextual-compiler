@@ -11,6 +11,7 @@ package health
 
 import (
 	"math"
+	"sort"
 	"sync"
 	"time"
 )
@@ -74,11 +75,12 @@ type HealthScore struct {
 
 // Model manages per-entity severity priors with an in-memory cache.
 type Model struct {
-	mu         sync.RWMutex
-	entries    map[string]*EntityPriors // key: "tenant_id:entity_id"
-	config     Config
-	store      HealthStore // optional
-	severities map[string]SeverityLevel
+	mu              sync.RWMutex
+	entries         map[string]*EntityPriors // key: "tenant_id:entity_id"
+	config          Config
+	store           HealthStore // optional
+	severities      map[string]SeverityLevel
+	validSeveritySet map[string]bool // pre-computed, immutable after construction
 }
 
 // NewModel creates a new health model.
@@ -88,15 +90,18 @@ func NewModel(cfg Config, store HealthStore) *Model {
 	}
 
 	sevMap := make(map[string]SeverityLevel, len(cfg.Severities))
+	validSet := make(map[string]bool, len(cfg.Severities))
 	for _, s := range cfg.Severities {
 		sevMap[s.Name] = s
+		validSet[s.Name] = true
 	}
 
 	return &Model{
-		entries:    make(map[string]*EntityPriors),
-		config:     cfg,
-		store:      store,
-		severities: sevMap,
+		entries:          make(map[string]*EntityPriors),
+		config:           cfg,
+		store:            store,
+		severities:       sevMap,
+		validSeveritySet: validSet,
 	}
 }
 
@@ -124,21 +129,27 @@ func (m *Model) GetOrCreate(tenantID, entityID string) *EntityPriors {
 		return entry
 	}
 
-	// Evict oldest if at capacity
+	// Evict oldest if at capacity. Sort all entries by UpdatedAt once and
+	// delete the bottom 10% in a single O(n log n) pass instead of the
+	// previous O(n²) repeated linear-scan approach.
 	if len(m.entries) >= m.config.MaxEntries {
 		evictTarget := int(float64(m.config.MaxEntries) * 0.9)
-		for len(m.entries) >= evictTarget {
-			var oldestKey string
-			var oldestTime time.Time
-			first := true
-			for k, v := range m.entries {
-				if first || v.UpdatedAt.Before(oldestTime) {
-					oldestKey = k
-					oldestTime = v.UpdatedAt
-					first = false
-				}
+		toEvict := len(m.entries) - evictTarget
+		if toEvict > 0 {
+			type kv struct {
+				key string
+				t   time.Time
 			}
-			delete(m.entries, oldestKey)
+			keys := make([]kv, 0, len(m.entries))
+			for k, v := range m.entries {
+				keys = append(keys, kv{k, v.UpdatedAt})
+			}
+			sort.Slice(keys, func(i, j int) bool {
+				return keys[i].t.Before(keys[j].t)
+			})
+			for i := 0; i < toEvict; i++ {
+				delete(m.entries, keys[i].key)
+			}
 		}
 	}
 
@@ -288,12 +299,9 @@ func (m *Model) IsValidSeverity(name string) bool {
 }
 
 // ValidSeverities returns the set of configured severity level names.
+// The returned map is shared and must not be modified by the caller.
 func (m *Model) ValidSeverities() map[string]bool {
-	result := make(map[string]bool, len(m.severities))
-	for name := range m.severities {
-		result[name] = true
-	}
-	return result
+	return m.validSeveritySet
 }
 
 func betaVariance(alpha, beta float64) float64 {

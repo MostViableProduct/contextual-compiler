@@ -189,19 +189,25 @@ func (g *BayesianGate) getPrior(tenantID, category, sourceType string) BetaPrior
 	entry, exists := g.entries[key]
 	if exists && entry.prior.Observations >= g.config.HierarchicalMinObs {
 		entry.lastAccess = time.Now()
+		priorCopy := entry.prior // copy under lock before releasing
 		g.mu.Unlock()
-		return entry.prior
+		return priorCopy
+	}
+	// Copy prior fields under lock so reads below are race-free.
+	var priorCopy BetaPrior
+	if exists {
+		priorCopy = entry.prior
 	}
 	g.mu.Unlock()
 
 	// Hierarchical fallback: blend specific and pooled priors
-	if exists && entry.prior.Observations > 0 {
+	if exists && priorCopy.Observations > 0 {
 		pooled := g.getPooledPrior(tenantID, category)
-		weight := float64(entry.prior.Observations) / float64(g.config.HierarchicalMinObs)
+		weight := float64(priorCopy.Observations) / float64(g.config.HierarchicalMinObs)
 		return BetaPrior{
-			Alpha:        weight*entry.prior.Alpha + (1-weight)*pooled.Alpha,
-			Beta:         weight*entry.prior.Beta + (1-weight)*pooled.Beta,
-			Observations: entry.prior.Observations,
+			Alpha:        weight*priorCopy.Alpha + (1-weight)*pooled.Alpha,
+			Beta:         weight*priorCopy.Beta + (1-weight)*pooled.Beta,
+			Observations: priorCopy.Observations,
 		}
 	}
 

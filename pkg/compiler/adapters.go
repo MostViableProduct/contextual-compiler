@@ -73,6 +73,13 @@ type Signal struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// Classification source constants for ClassifyResult.ClassificationSource.
+const (
+	SourceHeuristic      = "heuristic"
+	SourceHeuristicGated = "heuristic_gated"
+	SourceLLM            = "llm"
+)
+
 // ClassifyResult holds the full output of the cascade classification pipeline.
 type ClassifyResult struct {
 	Category             string                `json:"category"`

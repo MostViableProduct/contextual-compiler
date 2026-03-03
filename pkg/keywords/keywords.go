@@ -43,10 +43,11 @@ func DefaultConfig() Config {
 
 // Learner manages keyword learning and promotion.
 type Learner struct {
-	config     Config
-	store      KeywordStore
-	classifier *classifier.Classifier
-	runtime    *classifier.LearnedKeywordStore
+	config         Config
+	store          KeywordStore
+	classifier     *classifier.Classifier
+	runtime        *classifier.LearnedKeywordStore
+	staticKeywords map[string]bool // pre-computed at construction, immutable
 }
 
 // NewLearner creates a new keyword learner.
@@ -64,11 +65,19 @@ func NewLearner(cfg Config, store KeywordStore, cls *classifier.Classifier, runt
 		cfg.MaxExtracted = 5
 	}
 
+	static := make(map[string]bool)
+	for _, kws := range cls.CategoryKeywords() {
+		for _, kw := range kws {
+			static[kw] = true
+		}
+	}
+
 	return &Learner{
-		config:     cfg,
-		store:      store,
-		classifier: cls,
-		runtime:    runtime,
+		config:         cfg,
+		store:          store,
+		classifier:     cls,
+		runtime:        runtime,
+		staticKeywords: static,
 	}
 }
 
@@ -88,13 +97,6 @@ func (l *Learner) RecordDisagreement(content string, llmCategory string, llmConf
 // ExtractKeywords tokenizes content and returns up to MaxExtracted novel
 // tokens not already in the static category keywords map.
 func (l *Learner) ExtractKeywords(content, category string) []string {
-	staticKeywords := make(map[string]bool)
-	for _, keywords := range l.classifier.CategoryKeywords() {
-		for _, kw := range keywords {
-			staticKeywords[kw] = true
-		}
-	}
-
 	tokens := Tokenize(content)
 
 	seen := make(map[string]bool)
@@ -106,7 +108,7 @@ func (l *Learner) ExtractKeywords(content, category string) []string {
 		if Stopwords[token] {
 			continue
 		}
-		if staticKeywords[token] {
+		if l.staticKeywords[token] {
 			continue
 		}
 		if seen[token] {
@@ -134,7 +136,9 @@ func (l *Learner) Promote() (int, error) {
 		return 0, err
 	}
 
-	_ = l.store.DemoteKeywords(l.config.MinConfidence, l.config.MinObservations)
+	if err := l.store.DemoteKeywords(l.config.MinConfidence, l.config.MinObservations); err != nil {
+		return 0, err
+	}
 
 	l.runtime.Update(keywords)
 	return len(keywords), nil
